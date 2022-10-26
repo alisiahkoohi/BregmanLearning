@@ -3,53 +3,53 @@ import torch.nn.functional as F
 import torch
 import math
 from itertools import cycle
-  
-    
+
+
 def init_weight_bias_normal(m):
     if type(m) == nn.Linear:
         m.weight.data = torch.randn_like(m.weight.data)
         m.bias.data = torch.randn_like(m.bias.data)
-        
-        
-        
-def sparsify_(model, sparsity, ltype = nn.Linear, conv_group=True, row_group = False):       
+
+
+
+def sparsify_(model, sparsity, ltype = nn.Linear, conv_group=True, row_group = False):
     for m in model.modules():
         if not isinstance(m, ltype):
             continue
-            
+
         elif (isinstance(m, nn.Linear) and not row_group) or (isinstance(m, nn.Conv2d) and not conv_group):
             s_loc = sparsity
             mask = torch.bernoulli(s_loc*torch.ones_like(m.weight))
             m.weight.data.mul_(mask)
-            
+
         elif isinstance(m, nn.Linear): # row sparsity
             s_loc = sparsity
             w = m.weight.data
             mask = torch.bernoulli(s_loc*torch.ones(size=(w.shape[0],1),device=w.device))
             #
             m.weight.data.mul_(mask)
-            
+
         elif isinstance(m, nn.Conv2d): # kernel sparsity
             s_loc = sparsity
             w = m.weight.data
             n = w.shape[0]*w.shape[1]
-            
+
             # assign mask
             mask = torch.zeros(n,1,device=w.device)
             idx = torch.randint(low=0,high=n,size=(math.ceil(n*s_loc),))
             mask[idx] = 1
-            
+
             # multiply with mask
             c = w.view(w.shape[0]*w.shape[1],-1)
             m.weight.data = mask.mul(c).view(w.shape)
-            
-        
+
+
 # def sparsify_(model, sparsity):
 #     if isinstance(sparsity, list):
 #         s_iter = cycle(sparsity)
 #     else:
 #         s_iter = cycle([sparsity])
-        
+
 #     for m in model.modules():
 #         if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv2d):
 #             s_loc = next(s_iter)
@@ -71,19 +71,19 @@ def sparse_bias_uniform_(model,r0,r1,ltype = nn.Linear):
                 bound0 = r0 / math.sqrt(fan_in)
                 bound1 = r1/math.sqrt(fan_in)
                 nn.init.uniform_(m.bias, -bound0, bound1)
-                
+
 def bias_constant_(model,r):
     for m in model.modules():
         if isinstance(m, torch.nn.Linear):
             if type(m) == nn.Linear:
-                nn.init.constant_(m.bias, r)           
-                
+                nn.init.constant_(m.bias, r)
+
 def sparse_weight_normal_(model,r,ltype = nn.Linear):
     for m in model.modules():
         if isinstance(m,ltype):
             nn.init.kaiming_normal_(m.weight)
             m.weight.data.mul_(r)
-                
+
 
 def sparse_weight_uniform_(model,r):
     for m in model.modules():
@@ -92,11 +92,11 @@ def sparse_weight_uniform_(model,r):
             fan = nn.init._calculate_correct_fan(m.weight, 'fan_in')
             std = r / math.sqrt(fan)
             bound = math.sqrt(3.0) * std  # Calculate uniform bounds from standard deviation
-            
+
             with torch.no_grad():
                 m.weight.uniform_(-bound, bound)
-    
-    
+
+
 
 def sparse_he_(model, r):
     for m in model.modules():
@@ -131,12 +131,12 @@ def print_sparsity(M,print_all=True):
     n_list=[]
     sp=0
     numel=0
-    for m in M:
+    for m in M.modules():
         if isinstance(m, torch.nn.Linear):
             a = m.weight
             numel_loc = a.data.numel()
             numel += numel_loc
-            
+
             sp_loc = torch.count_nonzero(a.data).item()
             sp += sp_loc
             s += str(sp_loc/numel_loc) + " "
@@ -147,18 +147,18 @@ def print_sparsity(M,print_all=True):
             a = m.weight
             numel_loc = a.data.numel()
             numel += numel_loc
-            
+
             sp_loc = torch.count_nonzero(a.data).item()
             sp += sp_loc
             s += str(sp_loc/numel_loc) + " "
-    
-            
+
+
     print(50*'-')
     if print_all:
         print('Weight Sparsity:', s)
         print('Active Nodes:', n)
     print('Total percentage of used weights:',(sp/numel))
-    
+
     return s_list, n_list, sp/numel
 
 def net_sparsity(model):
@@ -180,7 +180,7 @@ def node_sparsity(model):
     for m in model.modules():
         if isinstance(m, torch.nn.Linear):
             a = m.weight
-            
+
             nnz = torch.count_nonzero(torch.norm(a.data,p=2,dim=1)).item()
             numel_loc = a.shape[0]
             ret.append(nnz/numel_loc)
@@ -199,7 +199,7 @@ def linear_sparsity(model):
             nnz += torch.count_nonzero(a.data).item()
     #
     return nnz/numel
-    
+
 
 def conv_sparsity(model):
     nnz = 0
@@ -215,7 +215,7 @@ def conv_sparsity(model):
         return 0
     else:
         return nnz/total
-        
+
 
 def get_weights(model):
     for m in model.modules():
@@ -223,28 +223,28 @@ def get_weights(model):
             yield m.weight
         else:
             continue
-            
+
 def get_weights_conv(model):
     for m in model.modules():
         if isinstance(m, torch.nn.Conv2d):
             yield m.weight
         else:
             continue
-            
+
 def get_weights_linear(model):
     for m in model.modules():
         if isinstance(m, torch.nn.Linear):
             yield m.weight
         else:
             continue
-            
+
 def get_weights_batch(model):
     for m in model.modules():
         if isinstance(m, torch.nn.BatchNorm2d):
             yield m.weight
         else:
             continue
-            
+
 def get_bias(model):
     for m in model.modules():
         if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv2d) or isinstance(m, torch.nn.BatchNorm2d):
